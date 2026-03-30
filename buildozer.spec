@@ -4,7 +4,7 @@ package.name = mygame
 package.domain = org.test
 
 source.dir = .
-source.include_exts = py,png,jpg,kv
+source.include_exts = py,png,jpg,kv,wav
 
 requirements = python3,kivy
 
