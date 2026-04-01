@@ -1,0 +1,322 @@
+import pygame
+import random
+import sys
+
+# Initialize Pygame
+pygame.init()
+
+# Screen settings
+width = 600
+height = 800
+screen = pygame.display.set_mode((width, height))
+pygame.display.set_caption("Car Shooting Game")
+
+# Load background image
+try:
+    background = pygame.image.load("image.png")  # Ensure the file exists
+    background = pygame.transform.scale(background, (width, height))  # Scale to screen size
+except pygame.error:
+    print("background.jpg not found. Make sure it's in the same folder.")
+    pygame.quit()
+    sys.exit()
+
+background_y=0
+background_scroll_speed=5
+
+try:
+    start_background = pygame.image.load("start.jpg")
+    start_background = pygame.transform.scale(start_background, (width, height))
+except pygame.error:
+    print("background.png not found. Make sure it's in the same folder.")
+    pygame.quit()
+    sys.exit()
+
+# Colors
+white = (255, 255, 255)
+black = (0, 0, 0)
+red = (200, 0, 0)
+blue = (50, 200, 250)
+green=(100,200,0)
+
+# Load player car image
+try:
+    car_image = pygame.image.load("carimage.png")
+except pygame.error:
+    print("carimage.png not found.")
+    pygame.quit()
+    sys.exit()
+
+car_image = pygame.transform.scale(car_image, (50, 90))
+car_width, car_height = car_image.get_size()
+
+# Load obstacle car image
+try:
+    obstacle_image = pygame.image.load("obstacle.png")
+except pygame.error:
+    print("obstacle.png not found.")
+    pygame.quit()
+    sys.exit()
+
+obstacle_width = 50
+obstacle_height = 90
+obstacle_image = pygame.transform.scale(obstacle_image, (obstacle_width, obstacle_height))
+
+# Load sounds
+try:
+    shoot_sound = pygame.mixer.Sound("shoot.mp3")
+    hit_sound = pygame.mixer.Sound("hit.mp3")
+except pygame.error:
+    print("Sound files not found. No sounds will play.")
+    shoot_sound = None
+    hit_sound = None
+
+try:
+    pygame.mixer.music.load("background_music.mp3")
+    pygame.mixer.music.set_volume(0.5)  # Adjust volume as needed (0.0 to 1.0)
+    pygame.mixer.music.play(-1)  # Loop indefinitely
+except pygame.error:
+    print("Music file not found or could not be loaded.")
+
+# Font and game states
+font = pygame.font.SysFont(None, 36)
+game_active = False
+game_over = False
+
+# Car settings
+car_speed = 5
+car_x = width // 2 - 25
+car_y = height - 100
+
+# Bullet settings
+bullet_width = 5
+bullet_height = 10
+bullet_speed = 7
+bullets = []
+
+# Obstacle settings
+obstacle_speed = 5
+num_obstacles = 3
+obstacles = []
+
+def is_overlapping(new_rect, obstacle_list):
+    for ox, oy, _ in obstacle_list:
+        existing_rect = pygame.Rect(ox, oy, obstacle_width, obstacle_height)
+        if new_rect.colliderect(existing_rect):
+            return True
+    return False
+
+def spawn_obstacles():
+    obs = []
+    while len(obs) < num_obstacles:
+        x = random.randint(0, width - obstacle_width)
+        y = random.randint(-600, -obstacle_height)
+        speed = random.choice([-2, -1, 1, 2])
+        new_rect = pygame.Rect(x, y, obstacle_width, obstacle_height)
+        if not is_overlapping(new_rect, obs):
+            obs.append([x, y, speed])
+    return obs
+
+def get_difficulty(score):
+    if score < 10:
+        return 5
+    elif score <20:
+        return 7
+    elif score <30:
+        return 9
+    else:
+        return 11
+    
+def show_start_menu():
+    screen.blit(start_background,(0,0))
+    title = font.render("CAR SHOOTING GAME", True, red)
+    prompt = font.render("Press any key to start", True, green)
+    screen.blit(title, (width // 2 - title.get_width() // 2, height // 3))
+    screen.blit(prompt, (width // 2 - prompt.get_width() // 2, height // 2))
+    pygame.display.update()
+
+def show_game_over_menu(score):
+    screen.fill(green)
+    over = font.render("GAME OVER", True, red)
+    final_score = font.render(f"Score: {score}", True, black)
+    restart = font.render("Press R to Restart ", True, black)
+    quit = font.render(" press Q to Quit", True, black)
+    screen.blit(over, (width // 2 - over.get_width() // 2, height // 3))
+    screen.blit(final_score, (width // 2 - final_score.get_width() // 2, height // 2))
+    screen.blit(restart, (width // 2 - restart.get_width() // 2, height // 1.5))
+    screen.blit(quit, (width // 2 - quit.get_width() // 2, height // 1))
+    pygame.mixer.music.stop()
+    pygame.mixer.music.play(pygame.K_r)
+    pygame.display.update()
+
+# Clock and score
+clock = pygame.time.Clock()
+score = 0
+
+# Main loop
+running = True
+while running:
+    
+    if not game_active and not game_over:
+        show_start_menu()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                # Reset game state
+                car_x = width // 2 - 25
+                car_y = height - 100
+                bullets = []
+                obstacles = spawn_obstacles()
+                score = 0
+                game_active = True
+
+    elif game_active:
+        # Scroll the background
+        background_y += background_scroll_speed
+        if background_y >= height:
+            background_y = 0
+
+        # Draw two background images for seamless scrolling
+        screen.blit(background, (0, background_y - height))
+        screen.blit(background, (0, background_y))
+
+        current_speed = get_difficulty(score)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    bullet_x = car_x + car_width // 2 - bullet_width // 2
+                    bullet_y = car_y
+                    bullets.append([bullet_x, bullet_y])
+                    if shoot_sound:
+                        shoot_sound.play()
+
+        # Move car
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and car_x > 0:
+            car_x -= car_speed
+        if keys[pygame.K_RIGHT] and car_x < width - car_width:
+            car_x += car_speed
+        if keys[pygame.K_UP] and car_y > 0:
+            car_y -= car_speed
+        if keys[pygame.K_DOWN] and car_y < height - car_height:
+            car_y += car_speed
+
+        # Move and draw obstacles
+        for obstacle in obstacles[:]:
+            if len(obstacle) < 3:
+                continue
+            obstacle[0] += obstacle[2]
+            obstacle[1] += obstacle_speed
+            if obstacle[0] <= 0 or obstacle[0] >= width - obstacle_width:
+                obstacle[2] *= -1
+            screen.blit(obstacle_image, (obstacle[0], obstacle[1]))
+            if obstacle[1] > height:
+                obstacles.remove(obstacle)
+                while True:
+                    x = random.randint(0, width - obstacle_width)
+                    y = random.randint(-600, -obstacle_height)
+                    speed = random.choice([-2, -1, 1, 2])
+                    new_rect = pygame.Rect(x, y, obstacle_width, obstacle_height)
+                    if not is_overlapping(new_rect, obstacles):
+                        obstacles.append([x, y, obstacle_speed])
+                        break
+
+        # Move and draw bullets
+        for bullet in bullets[:]:
+            bullet[1] -= bullet_speed
+            bullet_rect = pygame.Rect(bullet[0], bullet[1], bullet_width, bullet_height)
+
+            hit = False
+            for i,obstacle in enumerate(obstacles):
+                if len(obstacle)  == 3:
+                    ox, oy, os =obstacle
+                else:
+                    continue
+                obstacle_rect = pygame.Rect(ox, oy, obstacle_width, obstacle_height)
+                if bullet_rect.colliderect(obstacle_rect):
+                    del obstacles[i]
+                    bullets.remove(bullet)
+                    score += 1
+                    
+                    
+                    while True:
+                        nx = random.randint(0, width - obstacle_width)
+                        ny = random.randint(-600, -obstacle_height)
+                        ns = random.choice([0,1])
+                        nr = pygame.Rect(nx, ny, obstacle_width, obstacle_height)
+                        if not is_overlapping(nr , obstacles):
+                            obstacles.append([nx, ny ,ns])
+                            break
+                    hit = True
+                    break
+            if not hit:
+                if bullet[1] > 0:
+                    pygame.draw.rect(screen, blue, bullet_rect)
+                else:
+                    bullets.remove(bullet)
+
+        #obstacle update
+        for obs in obstacles[:]:
+            if len(obs) < 3:
+                continue
+            if obs[1] > height // 3:
+                obs[0] += obs[2]
+            obs[0] = min(obs[0], width - obstacle_width)
+            screen.blit(obstacle_image,(obs[0],obs[1]))
+
+            if obs[1] > height:
+                obstacles.remove(obs)
+                while True:
+                    x = random.randint(0,width - obstacle_width)
+                    y = random.randint(-600, - obstacle_height)
+                    new_rect = pygame.Rect(x ,y, obstacle_width, obstacle_height)
+                    if not is_overlapping(new_rect,obstacles):
+                        speed = random.choice([1,2])
+                    if not is_overlapping(nr, obstacles):
+                        obstacles.append([x, y, speed])
+                        break    
+
+        # Draw player car
+        screen.blit(car_image, (car_x, car_y))
+
+        # Draw score
+        score_text = font.render(f"Score: {score}", True, black)
+        screen.blit(score_text, (10, 10))
+
+        # Collision check
+        car_rect = pygame.Rect(car_x, car_y, car_width, car_height)
+        for obstacle in obstacles:
+            obstacle_rect = pygame.Rect(obstacle[0], obstacle[1], obstacle_width, obstacle_height)
+            if car_rect.colliderect(obstacle_rect):
+                if hit_sound:
+                    hit_sound.play()
+                game_active = False
+                game_over = True
+                break
+
+         # obstacle car movement
+        obstacle_rect.y += obstacle_speed
+        if obstacle_rect.top > height:
+            obstacle_rect.midbottom = (random.randint(50, width - 50), 0)
+
+        pygame.display.update()
+        clock.tick(60)
+
+    elif game_over:
+        show_game_over_menu(score)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    game_active = False
+                    game_over = False
+                elif event.key == pygame.K_q:
+                    pygame.quit()
+                    sys.exit()
