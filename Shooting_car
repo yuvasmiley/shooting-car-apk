@@ -1,0 +1,357 @@
+import pygame
+import random
+import sys
+import math
+
+pygame.init()
+
+# ---------------- SCREEN ----------------
+width = 600
+height = 800
+screen = pygame.display.set_mode((width, height))
+pygame.display.set_caption("Car Shooting Game - Mobile")
+
+clock = pygame.time.Clock()
+font = pygame.font.SysFont(None, 36)
+
+# ---------------- TOUCH CONTROLS ----------------
+joystick_radius = 60
+joystick_outer = 80
+joystick_center_x = 120
+joystick_center_y = height - 120
+shoot_button_rect = pygame.Rect(width - 120, height - 120, 100, 100)
+touch_pos = None
+joystick_active = False
+
+# ---------------- LOAD IMAGES ----------------
+background = pygame.image.load("image.png")
+background = pygame.transform.scale(background, (width, height))
+
+start_bg = pygame.image.load("start.jpg")
+start_bg = pygame.transform.scale(start_bg, (width, height))
+
+car_img = pygame.image.load("carimage.png")
+car_img = pygame.transform.scale(car_img, (50, 90))
+
+obstacle_img = pygame.image.load("obstacle.png")
+obstacle_img = pygame.transform.scale(obstacle_img, (50, 90))
+
+bullet_img = pygame.image.load("bullet.png")
+bullet_img = pygame.transform.scale(bullet_img, (15, 30))
+
+powerup_img = pygame.image.load("bullet_powerup.png")
+powerup_img = pygame.transform.scale(powerup_img, (70, 70))
+
+heart_img = pygame.image.load("heart.png")
+heart_img = pygame.transform.scale(heart_img, (30, 30))
+
+# ---------------- JOYSTICK IMAGES ----------------
+joystick_outer_img = pygame.Surface((joystick_outer*2, joystick_outer*2), pygame.SRCALPHA)
+pygame.draw.circle(joystick_outer_img, (100, 100, 100, 100), (joystick_outer, joystick_outer), joystick_outer)
+joystick_inner_img = pygame.Surface((joystick_radius*2, joystick_radius*2), pygame.SRCALPHA)
+pygame.draw.circle(joystick_inner_img, (200, 200, 200, 150), (joystick_radius, joystick_radius), joystick_radius)
+
+# ---------------- EXPLOSION ----------------
+explosion_sheet = pygame.image.load("explosion.png").convert_alpha()
+EXP_W = 256
+EXP_H = 256
+explosion_frames = []
+for row in range(2):
+    for col in range(4):
+        frame = explosion_sheet.subsurface(col*EXP_W,row*EXP_H,EXP_W,EXP_H)
+        frame = pygame.transform.scale(frame,(40,90))
+        explosion_frames.append(frame)
+explosions = []
+
+# ---------------- SOUND ----------------
+shoot_sound = pygame.mixer.Sound("shoot.mp3")
+hit_sound = pygame.mixer.Sound("hit.mp3")
+pygame.mixer.music.load("background_music.mp3")
+pygame.mixer.music.set_volume(0.5)
+
+# ---------------- HIGH SCORE ----------------
+try:
+    with open("highscore.txt","r") as f:
+        high_score = int(f.read())
+except:
+    high_score = 0
+
+# ---------------- COLORS ----------------
+black=(0,0,0)
+red=(200,0,0)
+blue=(50,200,250)
+white=(255,255,255)
+
+# ---------------- GAME VARIABLES ----------------
+car_x = width//2
+car_y = height-120
+car_speed = 6
+bullets=[]
+bullet_speed=8
+max_bullets=10
+bullets_left=max_bullets
+shoot_delay=250
+last_shot=0
+score=0
+lives=3
+num_obstacles=3
+obstacles=[]
+powerup_active=False
+powerup_x=0
+powerup_y=0
+powerup_speed=5
+last_power_spawn=0
+game_active=False
+game_over=False
+bg_y=0
+
+# ---------------- FUNCTIONS ----------------
+def spawn_obstacle(existing):
+    while True:
+        x=random.randint(0,width-50)
+        y=random.randint(-800,-100)
+        speed=random.choice([-2,-1,1,2])
+        rect=pygame.Rect(x,y,50,90)
+        overlap=False
+        for ox,oy,_ in existing:
+            r=pygame.Rect(ox,oy,50,90)
+            if rect.colliderect(r):
+                overlap=True
+        if not overlap:
+            return [x,y,speed]
+
+def spawn_obstacles():
+    obs=[]
+    for i in range(num_obstacles):
+        obs.append(spawn_obstacle(obs))
+    return obs
+
+def draw_hearts():
+    for i in range(lives):
+        screen.blit(heart_img,(10+i*35,70))
+
+def distance(p1, p2):
+    return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+def update_joystick(touch_x, touch_y):
+    dx = touch_x - joystick_center_x
+    dy = touch_y - joystick_center_y
+    dist = distance((touch_x, touch_y), (joystick_center_x, joystick_center_y))
+    
+    if dist > joystick_radius:
+        angle = math.atan2(dy, dx)
+        joystick_x = joystick_center_x + math.cos(angle) * joystick_radius
+        joystick_y = joystick_center_y + math.sin(angle) * joystick_radius
+    else:
+        joystick_x = touch_x
+        joystick_y = touch_y
+    
+    return joystick_x, joystick_y
+
+def show_start():
+    screen.blit(start_bg,(0,0))
+    title=font.render("CAR SHOOTING GAME",True,red)
+    text=font.render("Tap to Start",True,blue)
+    screen.blit(title,(width//2-title.get_width()//2,300))
+    screen.blit(text,(width//2-text.get_width()//2,400))
+    pygame.display.update()
+
+def show_game_over():
+    screen.fill((100,200,0))
+    over=font.render("GAME OVER",True,red)
+    score_text=font.render(f"Score : {score}",True,black)
+    high_text=font.render(f"High Score : {high_score}",True,black)
+    restart=font.render("Tap to Restart",True,black)
+    quit_t=font.render("Hold Top Right to Quit",True,black)
+    screen.blit(over,(width//2-over.get_width()//2,250))
+    screen.blit(score_text,(width//2-score_text.get_width()//2,320))
+    screen.blit(high_text,(width//2-high_text.get_width()//2,360))
+    screen.blit(restart,(width//2-restart.get_width()//2,450))
+    screen.blit(quit_t,(width//2-quit_t.get_width()//2,500))
+    pygame.display.update()
+
+# ---------------- MAIN LOOP ----------------
+running=True
+joystick_x, joystick_y = joystick_center_x, joystick_center_y
+
+while running:
+    for event in pygame.event.get():
+        if event.type==pygame.QUIT:
+            running=False
+        
+        if event.type==pygame.FINGERDOWN or event.type==pygame.MOUSEBUTTONDOWN:
+            touch_x, touch_y = event.pos if hasattr(event, 'pos') else (event.x * width, event.y * height)
+            
+            # Start screen tap
+            if not game_active and not game_over:
+                car_x=width//2
+                car_y=height-120
+                bullets=[]
+                obstacles=spawn_obstacles()
+                score=0
+                lives=3
+                bullets_left=max_bullets
+                pygame.mixer.music.play(-1)
+                game_active=True
+            
+            # Game over restart
+            elif game_over:
+                if distance((touch_x, touch_y), (width//2, height//2)) < 100:
+                    game_over=False
+                elif touch_x > width - 150 and touch_y < 200:
+                    running=False
+            
+            # Joystick activation
+            elif game_active and distance((touch_x, touch_y), (joystick_center_x, joystick_center_y)) < joystick_outer:
+                joystick_active = True
+                touch_pos = (touch_x, touch_y)
+            
+            # Shoot button
+            elif game_active and shoot_button_rect.collidepoint((touch_x, touch_y)):
+                now = pygame.time.get_ticks()
+                if bullets_left > 0 and now - last_shot > shoot_delay:
+                    bx = car_x + 20
+                    by = car_y
+                    bullets.append([bx, by])
+                    bullets_left -= 1
+                    shoot_sound.play()
+                    last_shot = now
+
+        elif event.type==pygame.FINGERMOTION or event.type==pygame.MOUSEMOTION:
+            if joystick_active:
+                touch_pos = event.pos if hasattr(event, 'pos') else (event.x * width, event.y * height)
+        
+        elif event.type==pygame.FINGERUP or event.type==pygame.MOUSEBUTTONUP:
+            joystick_active = False
+            joystick_x, joystick_y = joystick_center_x, joystick_center_y
+
+    if not game_active and not game_over:
+        show_start()
+    
+    elif game_active:
+        # Update car movement from joystick
+        if joystick_active:
+            joystick_x, joystick_y = update_joystick(touch_pos[0], touch_pos[1])
+            dx = (joystick_x - joystick_center_x) / joystick_radius
+            dy = (joystick_y - joystick_center_y) / joystick_radius
+            
+            car_x += dx * car_speed
+            car_y += dy * car_speed
+            
+            car_x = max(0, min(width-50, car_x))
+            car_y = max(0, min(height-90, car_y))
+
+        bg_y += 5
+        if bg_y >= height:
+            bg_y = 0
+
+        screen.blit(background, (0, bg_y-height))
+        screen.blit(background, (0, bg_y))
+
+        # ---------------- OBSTACLES ----------------
+        for obs in obstacles[:]:
+            obs[0] += obs[2]
+            obs[1] += 5
+            if obs[0] <= 0 or obs[0] >= width-50:
+                obs[2] *= -1
+            screen.blit(obstacle_img, (obs[0], obs[1]))
+            if obs[1] > height:
+                obstacles.remove(obs)
+                obstacles.append(spawn_obstacle(obstacles))
+
+        # ---------------- BULLETS ----------------
+        now = pygame.time.get_ticks()
+        for b in bullets[:]:
+            b[1] -= bullet_speed
+            bullet_rect = pygame.Rect(b[0], b[1], 12, 25)
+            hit = False
+            for obs in obstacles:
+                obs_rect = pygame.Rect(obs[0], obs[1], 50, 90)
+                if bullet_rect.colliderect(obs_rect):
+                    explosions.append({"x": obs[0], "y": obs[1], "frame": 0})
+                    obstacles.remove(obs)
+                    obstacles.append(spawn_obstacle(obstacles))
+                    bullets.remove(b)
+                    score += 1
+                    if score > high_score:
+                        high_score = score
+                    hit = True
+                    break
+            if not hit:
+                if b[1] > 0:
+                    screen.blit(bullet_img, (b[0], b[1]))
+                else:
+                    bullets.remove(b)
+
+        # ---------------- EXPLOSIONS ----------------
+        for e in explosions[:]:
+            frame = explosion_frames[e["frame"]]
+            screen.blit(frame, (e["x"], e["y"]))
+            e["frame"] += 1
+            if e["frame"] >= len(explosion_frames):
+                explosions.remove(e)
+
+        # ---------------- POWERUP ----------------
+        if not powerup_active and now - last_power_spawn > 10000:
+            powerup_x = random.randint(0, width-40)
+            powerup_y = -50
+            powerup_active = True
+            last_power_spawn = now
+
+        if powerup_active:
+            powerup_y += powerup_speed
+            screen.blit(powerup_img, (powerup_x, powerup_y))
+            car_rect = pygame.Rect(car_x, car_y, 50, 90)
+            p_rect = pygame.Rect(powerup_x, powerup_y, 40, 40)
+            if car_rect.colliderect(p_rect):
+                bullets_left += 10
+                powerup_active = False
+            if powerup_y > height:
+                powerup_active = False
+
+        # ---------------- CAR ----------------
+        screen.blit(car_img, (car_x, car_y))
+
+        # ---------------- TOUCH CONTROLS UI ----------------
+        # Draw joystick
+        screen.blit(joystick_outer_img, (joystick_center_x - joystick_outer, joystick_center_y - joystick_outer))
+        screen.blit(joystick_inner_img, (joystick_x - joystick_radius, joystick_y - joystick_radius))
+        
+        # Draw shoot button
+        pygame.draw.rect(screen, (255, 100, 100), shoot_button_rect)
+        pygame.draw.rect(screen, white, shoot_button_rect, 5)
+        shoot_text = font.render("SHOOT", True, white)
+        screen.blit(shoot_text, (shoot_button_rect.x + 15, shoot_button_rect.y + 30))
+
+        # ---------------- UI ----------------
+        screen.blit(font.render(f"Score: {score}", True, black), (10, 10))
+        screen.blit(font.render(f"Bullets: {bullets_left}", True, black), (10, 40))
+        screen.blit(font.render(f"High Score: {high_score}", True, black), (10, 110))
+        draw_hearts()
+
+        # ---------------- COLLISION ----------------
+        car_rect = pygame.Rect(car_x, car_y, 50, 90)
+        for obs in obstacles:
+            obs_rect = pygame.Rect(obs[0], obs[1], 50, 90)
+            if car_rect.colliderect(obs_rect):
+                explosions.append({"x": car_x, "y": car_y, "frame": 0})
+                lives -= 1
+                hit_sound.play()
+                obstacles.remove(obs)
+                obstacles.append(spawn_obstacle(obstacles))
+                if lives <= 0:
+                    with open("highscore.txt", "w") as f:
+                        f.write(str(high_score))
+                    pygame.mixer.music.stop()
+                    game_active = False
+                    game_over = True
+                break
+
+        pygame.display.update()
+        clock.tick(60)
+    
+    elif game_over:
+        show_game_over()
+
+pygame.quit()
+sys.exit()
